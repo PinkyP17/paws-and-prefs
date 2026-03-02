@@ -1,7 +1,7 @@
 // src/components/MatchSummary.tsx
 "use client";
 
-import { useRef, useState, useEffect } from "react";
+import { useRef, useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { Heart, RefreshCcw, Share2, Check } from "lucide-react";
 import type { Cat } from "@/hooks/useCats";
@@ -21,35 +21,30 @@ const itemVariants = {
 };
 
 function CatTile({ cat }: { cat: Cat }) {
-  const imgRef = useRef<HTMLImageElement>(null);
-  // If the image is already in browser cache, img.complete is true immediately
-  // — no need to wait for onLoad, so we skip the shimmer entirely.
-  const [loaded, setLoaded] = useState(() => {
-    if (typeof window === "undefined") return false;
-    const img = new window.Image();
-    img.src = cat.imageUrl;
-    return img.complete;
-  });
-
+  const [loaded, setLoaded] = useState(false);
   return (
     <motion.div
       variants={itemVariants}
       className="relative aspect-square rounded-2xl overflow-hidden shadow-sm border border-slate-200 group bg-slate-100"
     >
+      {/* Skeleton loader fallback */}
       {!loaded && (
-        <div className="absolute inset-0 animate-pulse bg-gradient-to-br from-slate-200 to-slate-100" />
+        <div className="absolute inset-0 flex items-center justify-center animate-pulse z-0">
+          <Heart className="text-slate-300" size={24} />
+        </div>
       )}
+
       <img
-        ref={imgRef}
         src={cat.imageUrl}
         alt={cat.tag}
         loading="eager"
         onLoad={() => setLoaded(true)}
-        className={`w-full h-full object-cover transition-all duration-200 group-hover:scale-110 ${
+        className={`relative z-10 w-full h-full object-cover transition-all duration-500 group-hover:scale-110 ${
           loaded ? "opacity-100" : "opacity-0"
         }`}
       />
-      <div className="absolute bottom-2 left-2 bg-black/60 backdrop-blur-md text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+
+      <div className="absolute bottom-2 left-2 bg-black/60 backdrop-blur-md text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 z-20">
         <span>{cat.emoji}</span>
         <span>{cat.tag}</span>
       </div>
@@ -92,7 +87,6 @@ function ShareGrid({
           {cats.length} Liked · {affinity}% Affinity · out of {totalCats} cats
         </div>
       </div>
-
       <div
         style={{
           display: "grid",
@@ -155,11 +149,9 @@ export default function MatchSummary({
   const [shareState, setShareState] = useState<"idle" | "loading" | "done">(
     "idle",
   );
-  // Hold the module reference so it's loaded before the user clicks
   const domToImageRef = useRef<any>(null);
   const affinity = Math.round((likedCats.length / totalCats) * 100);
 
-  // Pre-load the library on mount (client-only, after hydration)
   useEffect(() => {
     import("dom-to-image-more").then((mod) => {
       domToImageRef.current = mod.default;
@@ -171,7 +163,6 @@ export default function MatchSummary({
     setShareState("loading");
 
     try {
-      // Use pre-loaded ref, or load on demand as fallback
       const domToImage =
         domToImageRef.current ?? (await import("dom-to-image-more")).default;
 
@@ -181,7 +172,6 @@ export default function MatchSummary({
         bgcolor: "#f8fafc",
       });
 
-      // Always download first
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -189,7 +179,6 @@ export default function MatchSummary({
       a.click();
       URL.revokeObjectURL(url);
 
-      // Also try native share on mobile as a bonus
       try {
         const file = new File([blob], "paws-and-prefs.png", {
           type: "image/png",
@@ -202,7 +191,7 @@ export default function MatchSummary({
           });
         }
       } catch {
-        // Native share dismissed or unsupported — download already done
+        // Native share dismissed — download already done
       }
 
       setShareState("done");
@@ -225,7 +214,6 @@ export default function MatchSummary({
         {likedCats.length} Liked &bull; {affinity}% Affinity
       </p>
 
-      {/* Visible UI grid */}
       {likedCats.length > 0 ? (
         <motion.div
           variants={containerVariants}
@@ -245,7 +233,7 @@ export default function MatchSummary({
         </div>
       )}
 
-      {/* Hidden export grid rendered off-screen for dom-to-image capture */}
+      {/* Hidden export grid for dom-to-image capture */}
       <div
         style={{
           position: "fixed",

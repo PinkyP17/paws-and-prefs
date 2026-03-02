@@ -11,7 +11,6 @@ import {
 } from "framer-motion";
 import { Heart, X, Sparkles, Undo2 } from "lucide-react";
 import { useCats, type Cat } from "@/hooks/useCats";
-// import { useSound } from "@/hooks/useSound"; // TODO: fix Web Audio API sound
 import MatchSummary from "@/components/MatchSummary";
 
 const exitVariants = {
@@ -22,13 +21,16 @@ const exitVariants = {
   }),
 };
 
-function preloadImage(url: string): Promise<void> {
-  return new Promise((resolve) => {
-    const img = new window.Image();
-    img.onload = () => resolve();
-    img.onerror = () => resolve();
-    img.src = url;
-  });
+// NEW: Preload image as a Blob to store directly in memory for 0ms rendering
+async function preloadImageBlob(url: string): Promise<string> {
+  try {
+    const response = await fetch(url);
+    const blob = await response.blob();
+    return URL.createObjectURL(blob);
+  } catch (error) {
+    console.error("Failed to preload blob:", error);
+    return url; // Fallback to normal URL if the fetch fails
+  }
 }
 
 // ─── Swipe hint ───────────────────────────────────────────────────────────────
@@ -188,7 +190,9 @@ function ActionButton({
         {burst && (
           <motion.span
             key="burst"
-            className={`absolute inset-0 rounded-full ${isLike ? "bg-indigo-400" : "bg-rose-400"}`}
+            className={`absolute inset-0 rounded-full ${
+              isLike ? "bg-indigo-400" : "bg-rose-400"
+            }`}
             initial={{ scale: 1, opacity: 0.6 }}
             animate={{ scale: 2.2, opacity: 0 }}
             exit={{ opacity: 0 }}
@@ -235,13 +239,15 @@ export default function Home() {
   const [likedCats, setLikedCats] = useState<Cat[]>([]);
   const [currentIndex, setCurrentIndex] = useState(-1);
   const [showSummary, setShowSummary] = useState(false);
+  const [isPreparingSummary, setIsPreparingSummary] = useState(false);
   const [history, setHistory] = useState<SwipeRecord[]>([]);
 
   const isSwipingRef = useRef(false);
   const hasInitialized = useRef(false);
   const exitDirectionRef = useRef(0);
-  // Track preload promises by URL — lets us await all liked images before showing summary
+
   const preloadPromisesRef = useRef<Map<string, Promise<void>>>(new Map());
+  const blobUrlsRef = useRef<Map<string, string>>(new Map()); // NEW: Track memory URLs
 
   if (cats.length > 0 && !hasInitialized.current) {
     hasInitialized.current = true;
@@ -249,14 +255,25 @@ export default function Home() {
   }
 
   useEffect(() => {
-    if (!isLoading && cats.length > 0 && currentIndex === -1 && !showSummary) {
-      // Wait for all liked image preloads to finish before showing summary
+    if (
+      !isLoading &&
+      cats.length > 0 &&
+      currentIndex === -1 &&
+      !showSummary &&
+      !isPreparingSummary
+    ) {
+      setIsPreparingSummary(true);
+
       const pending = Array.from(preloadPromisesRef.current.values());
       Promise.all(pending).then(() => {
-        setTimeout(() => setShowSummary(true), 350);
+        // 1.5s artificial delay for anticipation effect
+        setTimeout(() => {
+          setIsPreparingSummary(false);
+          setShowSummary(true);
+        }, 1500);
       });
     }
-  }, [currentIndex, isLoading, cats.length, showSummary]);
+  }, [currentIndex, isLoading, cats.length, showSummary, isPreparingSummary]);
 
   const handleSwipe = (isLiked: boolean, index: number) => {
     if (isSwipingRef.current) return;
@@ -269,12 +286,13 @@ export default function Home() {
 
     if (isLiked) {
       setLikedCats((prev) => [...prev, cat]);
-      // Store the promise so we can await it before showing the summary
+
+      // Fetch as blob and save the memory URL
       if (!preloadPromisesRef.current.has(cat.imageUrl)) {
-        preloadPromisesRef.current.set(
-          cat.imageUrl,
-          preloadImage(cat.imageUrl),
-        );
+        const promise = preloadImageBlob(cat.imageUrl).then((blobUrl) => {
+          blobUrlsRef.current.set(cat.imageUrl, blobUrl);
+        });
+        preloadPromisesRef.current.set(cat.imageUrl, promise);
       }
     }
 
@@ -293,6 +311,13 @@ export default function Home() {
     if (last.isLiked) {
       setLikedCats((prev) => prev.filter((c) => c.id !== last.cat.id));
       preloadPromisesRef.current.delete(last.cat.imageUrl);
+
+      // Memory cleanup for the Blob URL
+      const blobUrl = blobUrlsRef.current.get(last.cat.imageUrl);
+      if (blobUrl && blobUrl.startsWith("blob:")) {
+        URL.revokeObjectURL(blobUrl);
+      }
+      blobUrlsRef.current.delete(last.cat.imageUrl);
     }
 
     exitDirectionRef.current = last.isLiked ? -600 : 600;
@@ -315,6 +340,12 @@ export default function Home() {
       : 0;
 
   const isFirstCard = history.length === 0 && currentIndex === cats.length - 1;
+
+  // Swap network URLs for instant memory URLs before passing to summary
+  const summaryCats = likedCats.map((cat) => ({
+    ...cat,
+    imageUrl: blobUrlsRef.current.get(cat.imageUrl) || cat.imageUrl,
+  }));
 
   return (
     <main className="relative flex flex-col min-h-[100dvh] bg-slate-50 font-sans overflow-hidden">
@@ -363,7 +394,7 @@ export default function Home() {
           </div>
         ) : (
           <AnimatePresence mode="wait">
-            {!showSummary ? (
+            {!showSummary && !isPreparingSummary ? (
               <motion.div
                 key="cards"
                 className="flex flex-col items-center w-full max-w-[400px] h-full justify-center gap-8"
@@ -457,6 +488,32 @@ export default function Home() {
                   />
                 </div>
               </motion.div>
+            ) : isPreparingSummary ? (
+              <motion.div
+                key="preparing"
+                className="flex flex-col items-center gap-6"
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 1.1 }}
+                transition={{ duration: 0.4 }}
+              >
+                <div className="relative">
+                  <div className="w-24 h-24 border-4 border-indigo-100 border-t-pink-500 rounded-full animate-spin" />
+                  <Heart
+                    className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-pink-500 animate-pulse"
+                    size={32}
+                    fill="currentColor"
+                  />
+                </div>
+                <div className="text-center">
+                  <h3 className="text-xl font-black text-slate-800 tracking-tight mb-1">
+                    Analyzing Purrsonalities...
+                  </h3>
+                  <p className="text-slate-500 font-bold text-sm uppercase tracking-widest">
+                    Finding your matches
+                  </p>
+                </div>
+              </motion.div>
             ) : (
               <motion.div
                 key="summary"
@@ -465,7 +522,7 @@ export default function Home() {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 transition={{ duration: 0.5, ease: "easeOut" }}
               >
-                <MatchSummary likedCats={likedCats} totalCats={cats.length} />
+                <MatchSummary likedCats={summaryCats} totalCats={cats.length} />
               </motion.div>
             )}
           </AnimatePresence>
