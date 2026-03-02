@@ -1,101 +1,299 @@
 // src/components/MatchSummary.tsx
+"use client";
+
+import { useRef, useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Heart, RefreshCcw, Share2, Sparkles } from "lucide-react";
+import { Heart, RefreshCcw, Share2, Check } from "lucide-react";
+import type { Cat } from "@/hooks/useCats";
+
+const containerVariants = {
+  hidden: {},
+  show: { transition: { staggerChildren: 0.05 } },
+};
+
+const itemVariants = {
+  hidden: { opacity: 0, scale: 0.85 },
+  show: {
+    opacity: 1,
+    scale: 1,
+    transition: { type: "spring", stiffness: 300, damping: 20 },
+  },
+};
+
+function CatTile({ cat }: { cat: Cat }) {
+  const imgRef = useRef<HTMLImageElement>(null);
+  // If the image is already in browser cache, img.complete is true immediately
+  // — no need to wait for onLoad, so we skip the shimmer entirely.
+  const [loaded, setLoaded] = useState(() => {
+    if (typeof window === "undefined") return false;
+    const img = new window.Image();
+    img.src = cat.imageUrl;
+    return img.complete;
+  });
+
+  return (
+    <motion.div
+      variants={itemVariants}
+      className="relative aspect-square rounded-2xl overflow-hidden shadow-sm border border-slate-200 group bg-slate-100"
+    >
+      {!loaded && (
+        <div className="absolute inset-0 animate-pulse bg-gradient-to-br from-slate-200 to-slate-100" />
+      )}
+      <img
+        ref={imgRef}
+        src={cat.imageUrl}
+        alt={cat.tag}
+        loading="eager"
+        onLoad={() => setLoaded(true)}
+        className={`w-full h-full object-cover transition-all duration-200 group-hover:scale-110 ${
+          loaded ? "opacity-100" : "opacity-0"
+        }`}
+      />
+      <div className="absolute bottom-2 left-2 bg-black/60 backdrop-blur-md text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+        <span>{cat.emoji}</span>
+        <span>{cat.tag}</span>
+      </div>
+    </motion.div>
+  );
+}
+
+function ShareGrid({
+  cats,
+  affinity,
+  totalCats,
+}: {
+  cats: Cat[];
+  affinity: number;
+  totalCats: number;
+}) {
+  return (
+    <div
+      style={{
+        background: "#f8fafc",
+        padding: 24,
+        borderRadius: 24,
+        fontFamily: "sans-serif",
+        width: 600,
+      }}
+    >
+      <div style={{ textAlign: "center", marginBottom: 20 }}>
+        <div style={{ fontSize: 28, fontWeight: 900, color: "#1e293b" }}>
+          Paws & Prefs
+        </div>
+        <div
+          style={{
+            fontSize: 13,
+            color: "#94a3b8",
+            marginTop: 4,
+            letterSpacing: "0.1em",
+            textTransform: "uppercase",
+          }}
+        >
+          {cats.length} Liked · {affinity}% Affinity · out of {totalCats} cats
+        </div>
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(3, 1fr)",
+          gap: 12,
+        }}
+      >
+        {cats.map((cat) => (
+          <div
+            key={cat.id}
+            style={{
+              position: "relative",
+              aspectRatio: "1",
+              borderRadius: 16,
+              overflow: "hidden",
+              border: "1px solid #e2e8f0",
+            }}
+          >
+            <img
+              src={cat.imageUrl}
+              alt={cat.tag}
+              style={{
+                width: "100%",
+                height: "100%",
+                objectFit: "cover",
+                display: "block",
+              }}
+              crossOrigin="anonymous"
+            />
+            <div
+              style={{
+                position: "absolute",
+                bottom: 8,
+                left: 8,
+                background: "rgba(0,0,0,0.65)",
+                color: "white",
+                fontSize: 11,
+                fontWeight: 700,
+                padding: "2px 8px",
+                borderRadius: 999,
+              }}
+            >
+              {cat.tag}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default function MatchSummary({
   likedCats,
   totalCats,
 }: {
-  likedCats: { id: string; imageUrl: string }[];
+  likedCats: Cat[];
   totalCats: number;
 }) {
-  const percentage = Math.round((likedCats.length / totalCats) * 100);
+  const shareGridRef = useRef<HTMLDivElement>(null);
+  const [shareState, setShareState] = useState<"idle" | "loading" | "done">(
+    "idle",
+  );
+  // Hold the module reference so it's loaded before the user clicks
+  const domToImageRef = useRef<any>(null);
+  const affinity = Math.round((likedCats.length / totalCats) * 100);
+
+  // Pre-load the library on mount (client-only, after hydration)
+  useEffect(() => {
+    import("dom-to-image-more").then((mod) => {
+      domToImageRef.current = mod.default;
+    });
+  }, []);
+
+  const handleShare = async () => {
+    if (shareState === "loading" || !shareGridRef.current) return;
+    setShareState("loading");
+
+    try {
+      // Use pre-loaded ref, or load on demand as fallback
+      const domToImage =
+        domToImageRef.current ?? (await import("dom-to-image-more")).default;
+
+      const blob = await domToImage.toBlob(shareGridRef.current, {
+        quality: 1,
+        scale: 2,
+        bgcolor: "#f8fafc",
+      });
+
+      // Always download first
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "paws-and-prefs.png";
+      a.click();
+      URL.revokeObjectURL(url);
+
+      // Also try native share on mobile as a bonus
+      try {
+        const file = new File([blob], "paws-and-prefs.png", {
+          type: "image/png",
+        });
+        if (navigator.share && navigator.canShare?.({ files: [file] })) {
+          await navigator.share({
+            title: "My Paws & Prefs Results",
+            text: `I liked ${likedCats.length} out of ${totalCats} cats — ${affinity}% affinity! 🐱`,
+            files: [file],
+          });
+        }
+      } catch {
+        // Native share dismissed or unsupported — download already done
+      }
+
+      setShareState("done");
+      setTimeout(() => setShareState("idle"), 2000);
+    } catch (err) {
+      console.error("Share failed:", err);
+      setShareState("idle");
+    }
+  };
 
   return (
-    <div className="w-full max-w-2xl flex flex-col items-center py-8 px-4 animate-in fade-in slide-in-from-bottom-8 duration-700 z-10 relative">
-      {/* Decorative background for summary */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full aspect-square bg-indigo-50/50 rounded-full blur-3xl -z-10" />
-
-      <div className="relative mb-8">
-        <motion.div 
-          initial={{ scale: 0 }}
-          animate={{ scale: 1 }}
-          transition={{ type: "spring", damping: 12, stiffness: 200 }}
-          className="w-24 h-24 bg-gradient-to-tr from-indigo-600 to-pink-500 rounded-3xl flex items-center justify-center text-white shadow-2xl rotate-3"
-        >
-          <Heart size={48} fill="currentColor" />
-        </motion.div>
-        <motion.div
-          animate={{ rotate: 360 }}
-          transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
-          className="absolute -top-4 -right-4 text-indigo-400"
-        >
-          <Sparkles size={32} />
-        </motion.div>
+    <div className="w-full max-w-2xl flex flex-col items-center z-10 relative px-4">
+      <div className="w-20 h-20 bg-indigo-100 rounded-full flex items-center justify-center mb-4 text-indigo-500">
+        <Heart size={40} fill="currentColor" />
       </div>
+      <h2 className="text-4xl font-extrabold text-slate-800 mb-2">
+        It's a Match!
+      </h2>
+      <p className="text-slate-400 mb-8 text-sm font-bold tracking-widest uppercase">
+        {likedCats.length} Liked &bull; {affinity}% Affinity
+      </p>
 
-      <div className="text-center mb-10">
-        <h2 className="text-4xl md:text-5xl font-black text-slate-900 mb-3 tracking-tight">
-          {likedCats.length > 0 ? "It's a Match!" : "No Matches?"}
-        </h2>
-        <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-white rounded-full shadow-sm border border-slate-100 text-slate-600 font-bold text-sm">
-          <span>{likedCats.length} Liked</span>
-          <span className="w-1 h-1 bg-slate-300 rounded-full" />
-          <span>{percentage}% Affinity</span>
-        </div>
-      </div>
-
+      {/* Visible UI grid */}
       {likedCats.length > 0 ? (
-        <div className="w-full grid grid-cols-2 sm:grid-cols-3 gap-4 mb-12">
-          {likedCats.map((cat, index) => (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.8, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              transition={{ 
-                delay: index * 0.1,
-                type: "spring",
-                damping: 15
-              }}
-              key={cat.id || `liked-${index}`}
-              className="group relative aspect-[4/5] rounded-2xl overflow-hidden shadow-md border-2 border-white hover:shadow-xl transition-all hover:-translate-y-1"
-            >
-              <img
-                src={cat.imageUrl}
-                alt="Liked cat"
-                className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-3">
-                <p className="text-white text-[10px] font-bold uppercase tracking-wider">Saved to Favorites</p>
-              </div>
-            </motion.div>
+        <motion.div
+          variants={containerVariants}
+          initial="hidden"
+          animate="show"
+          className="grid grid-cols-2 md:grid-cols-3 gap-3 w-full"
+        >
+          {likedCats.map((cat) => (
+            <CatTile key={cat.id} cat={cat} />
           ))}
-        </div>
+        </motion.div>
       ) : (
-        <div className="bg-white p-10 rounded-[2.5rem] border-2 border-slate-100 text-center max-w-sm shadow-xl shadow-slate-200/50 mb-12">
-          <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-400">
-            <RefreshCcw size={32} />
-          </div>
-          <p className="text-slate-600 font-bold text-lg mb-2">
-            Quite picky, aren't we?
-          </p>
-          <p className="text-slate-400 text-sm">
-            Maybe the next batch will have the purr-fect companion for you.
+        <div className="bg-white/60 backdrop-blur-md p-8 rounded-3xl border border-slate-200 text-center max-w-sm mx-auto">
+          <p className="text-slate-600 font-medium">
+            No matches this time! You must have very specific taste.
           </p>
         </div>
       )}
 
-      <div className="flex flex-col sm:flex-row gap-4 w-full max-w-md">
+      {/* Hidden export grid rendered off-screen for dom-to-image capture */}
+      <div
+        style={{
+          position: "fixed",
+          top: "-9999px",
+          left: "-9999px",
+          pointerEvents: "none",
+        }}
+      >
+        <div ref={shareGridRef}>
+          <ShareGrid
+            cats={likedCats}
+            affinity={affinity}
+            totalCats={totalCats}
+          />
+        </div>
+      </div>
+
+      <div className="mt-10 flex gap-3 flex-wrap justify-center">
         <button
           onClick={() => window.location.reload()}
-          className="flex-1 flex items-center justify-center gap-3 px-8 py-4 bg-indigo-600 text-white rounded-2xl font-black shadow-xl shadow-indigo-200 hover:bg-indigo-700 hover:scale-[1.02] active:scale-[0.98] transition-all"
+          className="flex items-center gap-2 px-6 py-3 bg-slate-900 text-white rounded-full font-bold shadow-xl hover:bg-slate-800 hover:scale-105 active:scale-95 transition-all"
         >
-          <RefreshCcw size={20} strokeWidth={3} /> Start Over
+          <RefreshCcw size={18} /> Start Over
         </button>
-        <button
-          className="flex-1 flex items-center justify-center gap-3 px-8 py-4 bg-white text-slate-900 rounded-2xl font-black shadow-lg border border-slate-100 hover:bg-slate-50 hover:scale-[1.02] active:scale-[0.98] transition-all"
-        >
-          <Share2 size={20} strokeWidth={3} /> Share Results
-        </button>
+
+        {likedCats.length > 0 && (
+          <motion.button
+            onClick={handleShare}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            className="flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-full font-bold shadow-xl shadow-indigo-200 hover:bg-indigo-700 transition-all"
+          >
+            {shareState === "loading" ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                Preparing...
+              </>
+            ) : shareState === "done" ? (
+              <>
+                <Check size={18} /> Downloaded!
+              </>
+            ) : (
+              <>
+                <Share2 size={18} /> Share Results
+              </>
+            )}
+          </motion.button>
+        )}
       </div>
     </div>
   );
