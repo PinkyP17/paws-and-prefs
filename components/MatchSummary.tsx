@@ -2,7 +2,7 @@
 "use client";
 
 import { useRef, useEffect, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, Variants } from "framer-motion";
 import {
   Heart,
   RefreshCcw,
@@ -14,12 +14,12 @@ import {
 } from "lucide-react";
 import type { Cat } from "@/hooks/useCats";
 
-const containerVariants = {
+const containerVariants: Variants = {
   hidden: {},
   show: { transition: { staggerChildren: 0.05 } },
 };
 
-const itemVariants = {
+const itemVariants: Variants = {
   hidden: { opacity: 0, scale: 0.85 },
   show: {
     opacity: 1,
