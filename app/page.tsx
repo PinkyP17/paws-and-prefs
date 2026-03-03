@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, Variants } from "framer-motion";
 import { Heart, Sparkles, Undo2 } from "lucide-react";
 
 import { useCats, type Cat } from "@/hooks/useCats";
@@ -12,7 +12,7 @@ import MatchSummary from "@/components/MatchSummary";
 import SwipeCard from "@/components/SwipeCard";
 import ActionButton from "@/components/ActionButton";
 
-const exitVariants = {
+const exitVariants: Variants = {
   exit: (direction: number) => ({
     x: direction,
     opacity: 0,
