@@ -1,8 +1,12 @@
 import type { NextConfig } from "next";
 
-/** @type {import('next').NextConfig} */
-const nextConfig = {
+const nextConfig: NextConfig = {
+  // Tells Next.js to build a static HTML/CSS/JS version
   output: "export",
+
+  basePath: "/paws-and-prefs",
+
+  // Disables Next.js default image optimization since it doesn't work with static exports
   images: {
     unoptimized: true,
   },
