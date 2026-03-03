@@ -6,6 +6,7 @@ import { Heart, Sparkles, Undo2 } from "lucide-react";
 
 import { useCats, type Cat } from "@/hooks/useCats";
 import { preloadImageBlob } from "@/utils/imageUtils";
+import { useSound } from "@/hooks/useSound";
 
 import MatchSummary from "@/components/MatchSummary";
 import SwipeCard from "@/components/SwipeCard";
@@ -41,6 +42,8 @@ export default function Home() {
   const preloadPromisesRef = useRef<Map<string, Promise<void>>>(new Map());
   const blobUrlsRef = useRef<Map<string, string>>(new Map());
 
+  const { play } = useSound();
+
   if (cats.length > 0 && !hasInitialized.current) {
     hasInitialized.current = true;
     setCurrentIndex(cats.length - 1);
@@ -69,6 +72,7 @@ export default function Home() {
   const handleSwipe = (isLiked: boolean, index: number) => {
     if (isSwipingRef.current) return;
     isSwipingRef.current = true;
+    play(isLiked ? "like" : "pass");
 
     exitDirectionRef.current = isLiked ? 600 : -600;
     exitingIndexRef.current = index;
@@ -96,6 +100,7 @@ export default function Home() {
   const handleUndo = () => {
     if (isSwipingRef.current || history.length === 0) return;
     isSwipingRef.current = true;
+    play("undo");
 
     const last = history[history.length - 1];
 
