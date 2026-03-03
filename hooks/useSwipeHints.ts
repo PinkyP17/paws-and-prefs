@@ -1,10 +1,7 @@
 import { useEffect } from "react";
-import { animate, useMotionValue } from "framer-motion";
+import { animate, MotionValue } from "framer-motion";
 
-export function useSwipeHint(
-  x: ReturnType<typeof useMotionValue>,
-  enabled: boolean,
-) {
+export function useSwipeHint(x: MotionValue<number>, enabled: boolean) {
   useEffect(() => {
     if (!enabled) return;
     const runHint = () =>
